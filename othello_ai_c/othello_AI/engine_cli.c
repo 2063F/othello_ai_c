@@ -7,6 +7,8 @@
  * コマンド:
  *   BESTMOVE <black_hex16> <white_hex16> <player:b|w> <max_depth> <time_ms> <endgame_threshold>
  *     -> MOVE <square|PASS> <score> <depth> <nodes>
+ *   LEVELMOVE <black_hex16> <white_hex16> <player:b|w> <level:1-5> <time_ms>
+ *     -> MOVE <square|PASS> <score> <depth> <nodes>   (難易度指定版。search.h の find_move_by_level)
  *   QUIT
  *     -> プロセス終了
  *
@@ -16,12 +18,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <time.h>
 #include "othello.h"
 #include "search.h"
 
 int main(void) {
     char line[256];
     setvbuf(stdout, NULL, _IOLBF, 0); /* 行バッファ: 1行書いたらすぐ相手に届くようにする */
+    srand((unsigned)time(NULL));
 
     while (fgets(line, sizeof(line), stdin)) {
         char cmd[32];
@@ -29,22 +33,33 @@ int main(void) {
 
         if (strcmp(cmd, "QUIT") == 0) {
             break;
-        } else if (strcmp(cmd, "BESTMOVE") == 0) {
+        } else if (strcmp(cmd, "BESTMOVE") == 0 || strcmp(cmd, "LEVELMOVE") == 0) {
+            int is_level = (strcmp(cmd, "LEVELMOVE") == 0);
             char black_hex[32], white_hex[32], player_ch[8];
-            int max_depth; long time_ms; int endgame_threshold;
-            int got = sscanf(line, "%*s %31s %31s %7s %d %ld %d",
-                              black_hex, white_hex, player_ch,
-                              &max_depth, &time_ms, &endgame_threshold);
-            if (got != 6) {
-                printf("ERROR bad BESTMOVE args\n");
+            int max_depth = 0, level = LEVEL_MAX; long time_ms; int endgame_threshold = 0;
+            int got, ok;
+            if (is_level) {
+                got = sscanf(line, "%*s %31s %31s %7s %d %ld",
+                             black_hex, white_hex, player_ch, &level, &time_ms);
+                ok = (got == 5);
+            } else {
+                got = sscanf(line, "%*s %31s %31s %7s %d %ld %d",
+                             black_hex, white_hex, player_ch,
+                             &max_depth, &time_ms, &endgame_threshold);
+                ok = (got == 6);
+            }
+            if (!ok) {
+                printf("ERROR bad %s args\n", cmd);
                 continue;
             }
             Bitboard black = (Bitboard)strtoull(black_hex, NULL, 16);
             Bitboard white = (Bitboard)strtoull(white_hex, NULL, 16);
             int player_is_black = (player_ch[0] == 'b' || player_ch[0] == 'B');
 
-            SearchResult r = find_best_move(black, white, player_is_black,
-                                             max_depth, time_ms, endgame_threshold);
+            SearchResult r = is_level
+                ? find_move_by_level(black, white, player_is_black, level, time_ms)
+                : find_best_move(black, white, player_is_black,
+                                 max_depth, time_ms, endgame_threshold);
             if (r.square < 0) {
                 printf("MOVE PASS %.2f %d %ld\n", r.score, r.depth_reached, r.nodes);
             } else {

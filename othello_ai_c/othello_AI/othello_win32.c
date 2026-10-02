@@ -14,14 +14,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "othello.h"
 #include "search.h"
 
-/* ---- AIの強さ設定（othello_gui.py と同じ値） ---- */
-#define AI_MAX_DEPTH 30
+/* ---- AIの強さ設定（othello_gui.py と同じ値）。難易度ごとの中身は search.c の find_move_by_level ---- */
 #define AI_TIME_MS 1200
-#define ENDGAME_THRESHOLD 16
 
 /* ---- 画面レイアウト ---- */
 #define CELL 56
@@ -40,15 +40,17 @@
 #define ID_STATIC_STATUS 103
 #define ID_EDIT_KIFU 104
 #define ID_BTN_COPY 105
+#define ID_COMBO_LEVEL 106
 
 /* ---- ゲーム状態 ---- */
 static HINSTANCE g_hInst;
 static HFONT g_hFont;
-static HWND g_hCombo, g_hStatus, g_hKifu;
+static HWND g_hCombo, g_hLevel, g_hStatus, g_hKifu;
 
 static Bitboard g_black, g_white;
 static int g_current_is_black; /* 1=黒番 0=白番 */
 static int g_human_is_black;   /* 1=人間が黒 0=人間が白 */
+static int g_level = LEVEL_MAX; /* AIの難易度 1(接待)〜5(最強) */
 static int g_game_over;
 static char g_kifu_moves[4096]; /* "f5d6..." のように着手を連結した文字列（先頭記号なし） */
 
@@ -231,8 +233,8 @@ static void ProcessTurns(HWND hwnd) {
         InvalidateRect(hwnd, NULL, TRUE);
         UpdateWindow(hwnd);
 
-        SearchResult res = find_best_move(g_black, g_white, g_current_is_black,
-                                           AI_MAX_DEPTH, AI_TIME_MS, ENDGAME_THRESHOLD);
+        SearchResult res = find_move_by_level(g_black, g_white, g_current_is_black,
+                                               g_level, AI_TIME_MS);
         if (res.square >= 0) {
             Bitboard newP, newO;
             apply_move(P, O, res.square, &newP, &newO);
@@ -318,6 +320,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         HWND btnNew = CreateWindowW(L"BUTTON", L"新しい対局", WS_CHILD | WS_VISIBLE,
                                      196, 8, 120, 28, hwnd, (HMENU)ID_BTN_NEWGAME, g_hInst, NULL);
 
+        HWND lbl3 = CreateWindowW(L"STATIC", L"難易度:", WS_CHILD | WS_VISIBLE,
+                                   330, 14, 56, 20, hwnd, NULL, g_hInst, NULL);
+        g_hLevel = CreateWindowW(L"COMBOBOX", NULL,
+                                  WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+                                  388, 10, 136, 200, hwnd, (HMENU)ID_COMBO_LEVEL, g_hInst, NULL);
+        SendMessageW(g_hLevel, CB_ADDSTRING, 0, (LPARAM)L"1 (接待)");
+        SendMessageW(g_hLevel, CB_ADDSTRING, 0, (LPARAM)L"2 (やさしい)");
+        SendMessageW(g_hLevel, CB_ADDSTRING, 0, (LPARAM)L"3 (ふつう)");
+        SendMessageW(g_hLevel, CB_ADDSTRING, 0, (LPARAM)L"4 (つよい)");
+        SendMessageW(g_hLevel, CB_ADDSTRING, 0, (LPARAM)L"5 (最強)");
+        SendMessageW(g_hLevel, CB_SETCURSEL, LEVEL_MAX - 1, 0);
+
         g_hStatus = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE,
                                    20, STATUS_Y, CLIENT_W - 40, 24, hwnd,
                                    (HMENU)ID_STATIC_STATUS, g_hInst, NULL);
@@ -335,6 +349,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         SendMessageW(lbl1, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hCombo, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(btnNew, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+        SendMessageW(lbl3, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+        SendMessageW(g_hLevel, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hStatus, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(lbl2, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hKifu, WM_SETFONT, (WPARAM)g_hFont, TRUE);
@@ -387,6 +403,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             int idx = (int)SendMessageW(g_hCombo, CB_GETCURSEL, 0, 0);
             g_human_is_black = (idx == 0);
             NewGame(hwnd);
+        } else if (id == ID_COMBO_LEVEL && code == CBN_SELCHANGE) {
+            int idx = (int)SendMessageW(g_hLevel, CB_GETCURSEL, 0, 0);
+            g_level = idx + LEVEL_MIN;
+            NewGame(hwnd);
         }
         break;
     }
@@ -409,6 +429,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     (void)hPrevInstance;
     (void)lpCmdLine;
     g_hInst = hInstance;
+    srand((unsigned)time(NULL));
 
     WNDCLASSEXW wc;
     memset(&wc, 0, sizeof(wc));

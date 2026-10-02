@@ -247,3 +247,71 @@ SearchResult endgame_search(Bitboard black, Bitboard white, int player_is_black,
     if (target_depth < 1) target_depth = 1;
     return iterative_deepening(black, white, player_is_black, target_depth, time_limit_ms);
 }
+
+/* 合法手を1手ずつ打ってみて、手番側から見た評価値(1手先)を返す */
+static int one_ply_scores(Bitboard black, Bitboard white, int player_is_black,
+                          int *sqs, double *scores) {
+    Bitboard P = player_is_black ? black : white;
+    Bitboard O = player_is_black ? white : black;
+    Bitboard moves = get_moves(P, O);
+    int n = 0;
+    while (moves) {
+        int sq = __builtin_ctzll(moves);
+        moves &= moves - 1;
+        Bitboard nP, nO;
+        apply_move(P, O, sq, &nP, &nO);
+        Bitboard nb = player_is_black ? nP : nO;
+        Bitboard nw = player_is_black ? nO : nP;
+        sqs[n] = sq;
+        scores[n] = -evaluate_position(nb, nw, !player_is_black);
+        n++;
+    }
+    return n;
+}
+
+SearchResult find_move_by_level(Bitboard black, Bitboard white, int player_is_black,
+                                 int level, long time_limit_ms) {
+    if (level < LEVEL_MIN) level = LEVEL_MIN;
+    if (level > LEVEL_MAX) level = LEVEL_MAX;
+
+    switch (level) {
+    case 5: return find_best_move(black, white, player_is_black, 30, time_limit_ms, 16);
+    case 4:
+        if (rand() % 100 >= 10)
+            return find_best_move(black, white, player_is_black, 3, time_limit_ms, 6);
+        break; /* 10%はランダム（下の共通処理へ） */
+    case 3:
+        if (rand() % 100 >= 25)
+            return find_best_move(black, white, player_is_black, 2, time_limit_ms, 0);
+        break; /* 25%はランダム（下の共通処理へ） */
+    default: break;
+    }
+
+    /* レベル1〜2（とレベル3〜4のランダム手）は1手先評価だけで決める */
+    int sqs[64];
+    double scores[64];
+    int n = one_ply_scores(black, white, player_is_black, sqs, scores);
+    SearchResult r;
+    r.square = -1;
+    r.score = 0.0;
+    r.nodes = n;
+    r.depth_reached = 1;
+    if (n == 0) return r;
+
+    int pick;
+    if (level == 1) {
+        /* 接待: 80%で最悪手、残りはランダム（毎回最悪手だと不自然なので少し揺らす） */
+        pick = 0;
+        for (int i = 1; i < n; i++) if (scores[i] < scores[pick]) pick = i;
+        if (rand() % 100 < 20) pick = rand() % n;
+    } else if (level == 2) {
+        pick = 0;
+        for (int i = 1; i < n; i++) if (scores[i] > scores[pick]) pick = i;
+        if (rand() % 100 < 50) pick = rand() % n;
+    } else {
+        pick = rand() % n;
+    }
+    r.square = sqs[pick];
+    r.score = scores[pick];
+    return r;
+}

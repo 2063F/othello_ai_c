@@ -25,4 +25,18 @@ SearchResult find_best_move(Bitboard black, Bitboard white, int player_is_black,
  */
 SearchResult endgame_search(Bitboard black, Bitboard white, int player_is_black, long time_limit_ms);
 
+/*
+ * 難易度(レベル)付きの着手選択。level は 1〜5（範囲外は丸める）。
+ *   5: 最強。find_best_move(深さ上限30, time_limit_ms, 終盤16マス完全読み)と同じ
+ *   4: 3手読み・終盤6マス完全読み。たまに(10%)ランダムな手を打つ
+ *   3: 2手読み（終盤読み切りなし）。ときどき(25%)ランダムな手を打つ
+ *   2: 1手先の評価だけで判断。半分の確率でランダムな手を打つ
+ *   1: 接待用。1手先の評価で「一番悪い手」を優先して選ぶ（角も平気で譲る）
+ * レベル1〜4は rand() を使うので、呼び出し側で srand() しておくこと。
+ */
+#define LEVEL_MIN 1
+#define LEVEL_MAX 5
+SearchResult find_move_by_level(Bitboard black, Bitboard white, int player_is_black,
+                                 int level, long time_limit_ms);
+
 #endif

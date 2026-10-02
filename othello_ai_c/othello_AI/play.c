@@ -1,8 +1,9 @@
 /*
  * オセロAI 対戦用CLI。
  *
- * 通常対戦:  ./play            (人間=黒 vs AI=白)
+ * 通常対戦:  ./play            (人間=黒 vs AI=白。起動時に難易度1〜5を聞かれる)
  *           ./play white       (人間=白 vs AI=黒)
+ *           ./play --level 1   (難易度を指定。1=接待用の超簡単 〜 5=最強)
  * 自己対戦テスト（AI vs AI を複数局回して、探索が正常終了するか確認）:
  *           ./play --selfplay 20
  */
@@ -13,9 +14,9 @@
 #include "othello.h"
 #include "search.h"
 
-#define AI_MAX_DEPTH 30      /* 事実上の上限なし。実際の深さは時間予算(AI_TIME_MS)で決まる */
-#define AI_TIME_MS 2000
-#define ENDGAME_THRESHOLD 16 /* 残り16マス以下で完全読みに切り替え（手元の計測では平均1.5秒程度） */
+#define AI_TIME_MS 2000     /* レベル5は深さ上限30・残り16マス以下で完全読み（search.c参照） */
+
+static int g_level = LEVEL_MAX;
 
 static void print_board_ui(Bitboard black, Bitboard white) {
     printf("\n   a b c d e f g h\n");
@@ -35,12 +36,11 @@ static void print_board_ui(Bitboard black, Bitboard white) {
 }
 
 static int ai_move(Bitboard black, Bitboard white, int player_is_black) {
-    SearchResult r = find_best_move(black, white, player_is_black,
-                                     AI_MAX_DEPTH, AI_TIME_MS, ENDGAME_THRESHOLD);
+    SearchResult r = find_move_by_level(black, white, player_is_black, g_level, AI_TIME_MS);
     char s[3];
     if (r.square >= 0) square_to_str(r.square, s); else strcpy(s, "--");
-    printf("[AI] 着手=%s 評価値=%.2f 深さ=%d ノード数=%ld\n",
-           s, r.score, r.depth_reached, r.nodes);
+    printf("[AI Lv%d] 着手=%s 評価値=%.2f 深さ=%d ノード数=%ld\n",
+           g_level, s, r.score, r.depth_reached, r.nodes);
     return r.square;
 }
 
@@ -117,7 +117,7 @@ static void selfplay(int n_games) {
             if (moves == 0) { player_is_black = !player_is_black; continue; }
 
             /* 自己対戦は高速化のため浅め＆終盤しきい値も小さくする
-               （ENDGAME_THRESHOLDのまま200msだと終盤読み切りが時間切れで
+               （レベル5設定(終盤16マス)のまま200msだと終盤読み切りが時間切れで
                  中断されやすく、実行ごとに結果がぶれてしまうため） */
             SearchResult r = find_best_move(black, white, player_is_black,
                                              6, 200, 10);
@@ -150,7 +150,22 @@ int main(int argc, char **argv) {
         return 0;
     }
     int human_is_black = 1;
-    if (argc >= 2 && strcmp(argv[1], "white") == 0) human_is_black = 0;
+    int level = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "white") == 0) human_is_black = 0;
+        else if (strcmp(argv[i], "--level") == 0 && i + 1 < argc) level = atoi(argv[++i]);
+    }
+    if (level < LEVEL_MIN || level > LEVEL_MAX) {
+        printf("難易度を選んでください (1=接待用の超簡単 〜 5=最強) [5]: ");
+        char line[32];
+        level = LEVEL_MAX;
+        if (fgets(line, sizeof(line), stdin)) {
+            int v = atoi(line);
+            if (v >= LEVEL_MIN && v <= LEVEL_MAX) level = v;
+        }
+    }
+    g_level = level;
+    srand((unsigned)time(NULL));
     play_human(human_is_black);
     return 0;
 }

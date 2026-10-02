@@ -34,6 +34,10 @@ AI_MAX_DEPTH = 30
 AI_TIME_MS = 1200
 ENDGAME_THRESHOLD = 16
 
+# 難易度(1〜5)。中身は C側 search.c の find_move_by_level
+LEVEL_LABELS = ["1 (接待)", "2 (やさしい)", "3 (ふつう)", "4 (つよい)", "5 (最強)"]
+DEFAULT_LEVEL = 5
+
 
 def engine_binary_path():
     here = os.path.dirname(os.path.abspath(__file__))
@@ -59,6 +63,15 @@ class Engine:
             black, white, "b" if player_is_black else "w",
             max_depth, time_ms, endgame_threshold,
         )
+        return self._request(cmd)
+
+    def level_move(self, black, white, player_is_black, level, time_ms=AI_TIME_MS):
+        cmd = "LEVELMOVE {:016x} {:016x} {} {} {}\n".format(
+            black, white, "b" if player_is_black else "w", level, time_ms,
+        )
+        return self._request(cmd)
+
+    def _request(self, cmd):
         self.proc.stdin.write(cmd)
         self.proc.stdin.flush()
         line = self.proc.stdout.readline().strip()
@@ -145,6 +158,7 @@ class OthelloGUI:
         self.board = new_board()
         self.player = BLACK  # 黒から開始
         self.human_color = BLACK
+        self.level = DEFAULT_LEVEL
         self.game_over = False
         self.move_history = []  # 実際に打たれた手を順番に文字列("f5"等)で記録。パスは含めない
 
@@ -154,6 +168,9 @@ class OthelloGUI:
         tk.Label(top, text="あなたの色:").pack(side=tk.LEFT)
         self.color_var = tk.StringVar(value="黒")
         tk.OptionMenu(top, self.color_var, "黒", "白", command=self.on_color_change).pack(side=tk.LEFT)
+        tk.Label(top, text="難易度:").pack(side=tk.LEFT, padx=(10, 0))
+        self.level_var = tk.StringVar(value=LEVEL_LABELS[DEFAULT_LEVEL - 1])
+        tk.OptionMenu(top, self.level_var, *LEVEL_LABELS, command=self.on_level_change).pack(side=tk.LEFT)
         tk.Button(top, text="新しい対局", command=self.new_game).pack(side=tk.LEFT, padx=10)
 
         self.status = tk.Label(root, text="", font=("Meiryo", 12))
@@ -180,6 +197,10 @@ class OthelloGUI:
 
     def on_color_change(self, value):
         self.human_color = BLACK if value == "黒" else WHITE
+        self.new_game()
+
+    def on_level_change(self, value):
+        self.level = LEVEL_LABELS.index(value) + 1
         self.new_game()
 
     def new_game(self):
@@ -291,7 +312,7 @@ class OthelloGUI:
         black, white = to_bitboards(self.board)
         player_is_black = (self.player == BLACK)
         try:
-            mv, score, depth, nodes = self.engine.best_move(black, white, player_is_black)
+            mv, score, depth, nodes = self.engine.level_move(black, white, player_is_black, self.level)
         except Exception as e:
             messagebox.showerror("エラー", f"AIエンジンとの通信に失敗しました: {e}")
             return
